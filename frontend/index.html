@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Новостной Портал</title>
+    
+    <!-- React через CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS для стилей -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Конфигурация API
+        const API_URL = 'http://localhost:8000';
+        const ADMIN_TOKEN = 'secret_admin_token_12345';
+        const POLL_INTERVAL = 5000; // 5 секунд
+
+        // Главный компонент
+        function App() {
+            const [news, setNews] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [lastUpdate, setLastUpdate] = useState(new Date());
+
+            // Загрузка новостей
+            const fetchNews = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/news`);
+                    const data = await response.json();
+                    setNews(data);
+                    setLastUpdate(new Date());
+                    setLoading(false);
+                } catch (error) {
+                    console.error('Ошибка загрузки новостей:', error);
+                    setLoading(false);
+                }
+            };
+
+            // Polling - автообновление каждые 5 секунд
+            useEffect(() => {
+                fetchNews(); // Сразу загрузить
+                
+                const interval = setInterval(() => {
+                    fetchNews();
+                }, POLL_INTERVAL);
+
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="min-h-screen">
+                    {/* Header */}
+                    <header className="bg-blue-600 text-white shadow-lg">
+                        <div className="container mx-auto px-4 py-6">
+                            <div className="flex justify-between items-center">
+                                <h1 className="text-3xl font-bold">📰 Новостной Портал</h1>
+                                <a
+                                    href="/admin.html"
+                                    className="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded-lg transition text-white font-semibold"
+                                >
+                                    🔐 Админ панель
+                                </a>
+                            </div>
+                            <p className="text-blue-200 mt-2">
+                                Обновлено: {lastUpdate.toLocaleTimeString('ru-RU')}
+                                {' '}(автообновление каждые 5 сек)
+                            </p>
+                        </div>
+                    </header>
+
+                    <div className="container mx-auto px-4 py-8">
+                        {/* Список новостей */}
+                        <div className="mt-8">
+                            <h2 className="text-2xl font-bold mb-6">Последние новости</h2>
+                            
+                            {loading ? (
+                                <div className="text-center py-12">
+                                    <div className="text-gray-500">Загрузка...</div>
+                                </div>
+                            ) : news.length === 0 ? (
+                                <div className="bg-white rounded-lg shadow p-8 text-center">
+                                    <p className="text-gray-500">Новостей пока нет. Используйте админ-панель для создания.</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-6">
+                                    {news.map(item => (
+                                        <NewsCard key={item.id} news={item} />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Компонент карточки новости
+        function NewsCard({ news }) {
+            const date = new Date(news.created_at);
+            
+            return (
+                <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+                    <div className="flex justify-between items-start mb-3">
+                        <h3 className="text-xl font-semibold text-gray-800">{news.title}</h3>
+                        <span className="text-sm text-gray-500 whitespace-nowrap ml-4">
+                            {date.toLocaleString('ru-RU')}
+                        </span>
+                    </div>
+                    <p className="text-gray-600 leading-relaxed">{news.content}</p>
+                    <div className="mt-4 text-sm text-gray-400">
+                        ID: {news.id}
+                    </div>
+                </div>
+            );
+        }
+
+
+        // Рендер приложения
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
