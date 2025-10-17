@@ -21,10 +21,11 @@
 
         // Конфигурация API
         const API_URL = 'http://localhost:8000';
-        const ADMIN_TOKEN = 'secret_admin_token_12345';
 
         // Главный компонент админ панели
         function AdminApp() {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [token, setToken] = useState(localStorage.getItem('admin_token'));
             const [news, setNews] = useState([]);
             const [loading, setLoading] = useState(true);
             const [lastUpdate, setLastUpdate] = useState(new Date());
@@ -32,6 +33,19 @@
             const [count, setCount] = useState(1);
             const [message, setMessage] = useState('');
             const [activeTab, setActiveTab] = useState('generate');
+            const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+            const [loginLoading, setLoginLoading] = useState(false);
+            const [loginError, setLoginError] = useState('');
+
+            // Проверка аутентификации при загрузке
+            useEffect(() => {
+                if (token) {
+                    setIsAuthenticated(true);
+                    fetchNews();
+                } else {
+                    setLoading(false);
+                }
+            }, [token]);
 
             // Загрузка новостей
             const fetchNews = async () => {
@@ -49,14 +63,55 @@
 
             // Автообновление каждые 5 секунд
             useEffect(() => {
-                fetchNews();
-                
-                const interval = setInterval(() => {
+                if (isAuthenticated) {
                     fetchNews();
-                }, 5000);
+                    
+                    const interval = setInterval(() => {
+                        fetchNews();
+                    }, 5000);
 
-                return () => clearInterval(interval);
-            }, []);
+                    return () => clearInterval(interval);
+                }
+            }, [isAuthenticated]);
+
+            // Функция входа
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setLoginLoading(true);
+                setLoginError('');
+
+                try {
+                    const response = await fetch(`${API_URL}/admin/login`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `username=${encodeURIComponent(loginForm.username)}&password=${encodeURIComponent(loginForm.password)}`
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        setToken(data.access_token);
+                        localStorage.setItem('admin_token', data.access_token);
+                        setIsAuthenticated(true);
+                        setLoginForm({ username: '', password: '' });
+                    } else {
+                        setLoginError('Неверное имя пользователя или пароль');
+                    }
+                } catch (error) {
+                    setLoginError('Ошибка соединения с сервером');
+                }
+
+                setLoginLoading(false);
+            };
+
+            // Функция выхода
+            const handleLogout = () => {
+                setToken(null);
+                localStorage.removeItem('admin_token');
+                setIsAuthenticated(false);
+                setNews([]);
+            };
 
             // Генерация новостей
             const generateNews = async () => {
@@ -69,7 +124,7 @@
                         {
                             method: 'POST',
                             headers: {
-                                'X-Admin-Token': ADMIN_TOKEN
+                                'Authorization': `Bearer ${token}`
                             }
                         }
                     );
@@ -78,8 +133,11 @@
                         const data = await response.json();
                         setMessage(`✅ Создано новостей: ${data.generated}`);
                         fetchNews(); // Обновить список
+                    } else if (response.status === 401) {
+                        setMessage('❌ Ошибка: токен истек, необходимо войти заново');
+                        handleLogout();
                     } else {
-                        setMessage('❌ Ошибка: неверный токен');
+                        setMessage('❌ Ошибка генерации новостей');
                     }
                 } catch (error) {
                     setMessage('❌ Ошибка соединения с сервером');
@@ -96,7 +154,7 @@
                         {
                             method: 'DELETE',
                             headers: {
-                                'X-Admin-Token': ADMIN_TOKEN
+                                'Authorization': `Bearer ${token}`
                             }
                         }
                     );
@@ -104,6 +162,9 @@
                     if (response.ok) {
                         setMessage(`✅ Новость ${newsId} удалена`);
                         fetchNews(); // Обновить список
+                    } else if (response.status === 401) {
+                        setMessage('❌ Ошибка: токен истек, необходимо войти заново');
+                        handleLogout();
                     } else {
                         setMessage('❌ Ошибка удаления');
                     }
@@ -124,7 +185,7 @@
                         {
                             method: 'DELETE',
                             headers: {
-                                'X-Admin-Token': ADMIN_TOKEN
+                                'Authorization': `Bearer ${token}`
                             }
                         }
                     );
@@ -132,6 +193,9 @@
                     if (response.ok) {
                         setMessage('✅ Все новости удалены');
                         fetchNews(); // Обновить список
+                    } else if (response.status === 401) {
+                        setMessage('❌ Ошибка: токен истек, необходимо войти заново');
+                        handleLogout();
                     } else {
                         setMessage('❌ Ошибка очистки');
                     }
@@ -139,6 +203,81 @@
                     setMessage('❌ Ошибка соединения с сервером');
                 }
             };
+
+            // Если не аутентифицирован, показать форму входа
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center">
+                        <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-gray-800">🔐 Вход в админ панель</h1>
+                                <p className="text-gray-600 mt-2">Введите данные для доступа</p>
+                            </div>
+                            
+                            <form onSubmit={handleLogin}>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Имя пользователя
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={loginForm.username}
+                                            onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                            placeholder="admin"
+                                            required
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Пароль
+                                        </label>
+                                        <input
+                                            type="password"
+                                            value={loginForm.password}
+                                            onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                            placeholder="admin123"
+                                            required
+                                        />
+                                    </div>
+                                    
+                                    {loginError && (
+                                        <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
+                                            {loginError}
+                                        </div>
+                                    )}
+                                    
+                                    <button
+                                        type="submit"
+                                        disabled={loginLoading}
+                                        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                                    >
+                                        {loginLoading ? 'Вход...' : '🚀 Войти'}
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <div className="mt-6 text-center">
+                                <a
+                                    href="/"
+                                    className="text-purple-600 hover:text-purple-800 text-sm"
+                                >
+                                    ← Вернуться на главную
+                                </a>
+                            </div>
+                            
+                            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                                <strong>Тестовые данные:</strong><br/>
+                                Логин: <code>admin</code><br/>
+                                Пароль: <code>admin123</code>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
 
             return (
                 <div className="min-h-screen">
@@ -150,12 +289,20 @@
                                     <h1 className="text-3xl font-bold">🔐 Админ Панель</h1>
                                     <p className="text-purple-200 mt-1">Управление новостным порталом</p>
                                 </div>
-                                <a
-                                    href="/"
-                                    className="bg-white text-purple-600 hover:bg-gray-100 px-4 py-2 rounded-lg font-semibold transition"
-                                >
-                                    ← К главной
-                                </a>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleLogout}
+                                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                    >
+                                        🚪 Выйти
+                                    </button>
+                                    <a
+                                        href="/"
+                                        className="bg-white text-purple-600 hover:bg-gray-100 px-4 py-2 rounded-lg font-semibold transition"
+                                    >
+                                        ← К главной
+                                    </a>
+                                </div>
                             </div>
                             <p className="text-purple-200 mt-2">
                                 Обновлено: {lastUpdate.toLocaleTimeString('ru-RU')}
