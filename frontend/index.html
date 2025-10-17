@@ -21,7 +21,6 @@
 
         // Конфигурация API
         const API_URL = 'http://localhost:8000';
-        const ADMIN_TOKEN = 'secret_admin_token_12345';
         const POLL_INTERVAL = 5000; // 5 секунд
 
         // Главный компонент
@@ -35,8 +34,19 @@
                 try {
                     const response = await fetch(`${API_URL}/news`);
                     const data = await response.json();
-                    setNews(data);
-                    setLastUpdate(new Date());
+                    
+                    // Проверяем, изменились ли данные (оптимизация)
+                    const currentNewsIds = news.map(n => n.id).join(',');
+                    const newNewsIds = data.map(n => n.id).join(',');
+                    
+                    if (currentNewsIds !== newNewsIds) {
+                        setNews(data);
+                        setLastUpdate(new Date());
+                        console.log('Updated');
+                    } else {
+                        console.log('No changes');
+                    }
+                    
                     setLoading(false);
                 } catch (error) {
                     console.error('Ошибка загрузки новостей:', error);
@@ -71,7 +81,7 @@
                             </div>
                             <p className="text-blue-200 mt-2">
                                 Обновлено: {lastUpdate.toLocaleTimeString('ru-RU')}
-                                {' '}(автообновление каждые 5 сек)
+                                {' '}(автообновление каждые {POLL_INTERVAL/1000} сек)
                             </p>
                         </div>
                     </header>

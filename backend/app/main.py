@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, Header, Form
+from fastapi import FastAPI, Depends, HTTPException, Header, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from faker import Faker
 import random
 from datetime import timedelta
+import time
 
 from .database import get_db, init_db
 from .models import News
@@ -25,6 +26,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Simple in-memory cache for production optimization
+news_cache = {
+    "data": None,
+    "timestamp": 0,
+    "ttl": 30  # Cache for 30 seconds
+}
+
+def get_cached_news():
+    """Get cached news if still valid, otherwise return None"""
+    current_time = time.time()
+    if (news_cache["data"] is not None and 
+        current_time - news_cache["timestamp"] < news_cache["ttl"]):
+        return news_cache["data"]
+    return None
+
+def set_cached_news(data):
+    """Cache news data with timestamp"""
+    news_cache["data"] = data
+    news_cache["timestamp"] = time.time()
+
 # Инициализация БД
 @app.on_event("startup")
 def startup_event():
@@ -41,9 +62,20 @@ def root():
 
 @app.get("/news")
 def get_news(db: Session = Depends(get_db)):
-    """Получить все новости (отсортированы по дате)"""
+    """Получить все новости (отсортированы по дате) с кешированием"""
+    # Check cache first
+    cached_news = get_cached_news()
+    if cached_news is not None:
+        return cached_news
+    
+    # If not cached, fetch from database
     news = db.query(News).order_by(News.created_at.desc()).all()
-    return [n.to_dict() for n in news]
+    news_data = [n.to_dict() for n in news]
+    
+    # Cache the result
+    set_cached_news(news_data)
+    
+    return news_data
 
 @app.get("/news/{news_id}")
 def get_news_by_id(news_id: int, db: Session = Depends(get_db)):
@@ -106,6 +138,10 @@ def generate_news(
         db.refresh(news)
         generated.append(news.to_dict())
     
+    # Invalidate cache when news is added
+    news_cache["data"] = None
+    news_cache["timestamp"] = 0
+    
     return {
         "status": "success",
         "generated": len(generated),
@@ -125,6 +161,11 @@ def delete_news(
     
     db.delete(news)
     db.commit()
+    
+    # Invalidate cache when news is deleted
+    news_cache["data"] = None
+    news_cache["timestamp"] = 0
+    
     return {"status": "deleted", "id": news_id}
 
 @app.delete("/admin/news")
@@ -135,4 +176,9 @@ def clear_all_news(
     """Очистить все новости (админ)"""
     db.query(News).delete()
     db.commit()
+    
+    # Invalidate cache when all news is deleted
+    news_cache["data"] = None
+    news_cache["timestamp"] = 0
+    
     return {"status": "all news deleted"}
